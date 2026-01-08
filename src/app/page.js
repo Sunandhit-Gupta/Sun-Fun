@@ -54,7 +54,18 @@ export default function Home() {
               Join Lobby 🎮
             </button>
           </Link>
+
+          <Link href="/watch">
+            <button className="px-8 py-4 rounded-xl font-semibold border border-purple-500/40 text-purple-300 hover:bg-purple-500/10 hover:text-purple-200 transition-all duration-300">
+              Watch Live 🎥
+            </button>
+          </Link>
         </div>
+
+        <p className="mt-4 text-sm text-gray-400">
+          Spectator mode · Watch games on TV or share with friends
+        </p>
+
       </section>
 
       {/* Games Section */}
@@ -122,22 +133,20 @@ function GameCard({ title, description, status, disabled }) {
   return (
     <div
       className={`rounded-2xl p-6 border transition-all duration-300
-      ${
-        disabled
+      ${disabled
           ? "bg-[#0f1629] border-white/5 opacity-60"
           : "bg-[#111827] border-white/10 hover:-translate-y-1 hover:border-yellow-400/40"
-      }`}
+        }`}
     >
       <h4 className="text-lg font-semibold mb-2">{title}</h4>
       <p className="text-gray-400 text-sm mb-4">{description}</p>
 
       <span
         className={`text-xs px-3 py-1 rounded-full font-medium
-        ${
-          status === "Available"
+        ${status === "Available"
             ? "bg-green-500/20 text-green-400"
             : "bg-gray-500/20 text-gray-400"
-        }`}
+          }`}
       >
         {status}
       </span>

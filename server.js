@@ -47,6 +47,17 @@ function startQuestionTimer(io, roomCode, room) {
 
         revealAndAdvance(io, roomCode, room)
     }, DURATION * 1000)
+
+    room.gameState.quiz = {
+        ...(room.gameState.quiz || {}),
+        timer: {
+            endsAt: room.timer.endsAt,
+            duration: room.timer.duration,
+        },
+    }
+    emitLiveState(io, room)
+
+
 }
 
 function revealAndAdvance(io, roomCode, room) {
@@ -95,6 +106,19 @@ function revealAndAdvance(io, roomCode, room) {
     })
 
 
+    room.gameState.quiz = {
+        question: {
+            text: currentQ.question,
+            options: currentQ.options,
+            correctAnswer: correct,
+        },
+        leaderboard: getQuizLeaderboard(room),
+        stats,
+    }
+
+    emitLiveState(io, room)
+
+
     // Move to next question after 3s
     setTimeout(() => {
         room.currentQuestionIndex++
@@ -111,6 +135,15 @@ function revealAndAdvance(io, roomCode, room) {
             io.to(roomCode).emit("quiz-ended", {
                 scores: room.scores, returnToLobbyAt,
             })
+
+            room.gameState.quiz = {
+                leaderboard: getQuizLeaderboard(room),
+                finished: true,
+            }
+
+            emitLiveState(io, room)
+
+
             setTimeout(() => {
                 // 🧹 Reset game-related state
                 room.phase = "lobby"
@@ -124,12 +157,14 @@ function revealAndAdvance(io, roomCode, room) {
                 room.timer = null
                 room.currentQuestionIndex = 0
                 room.scores = {}
+                room.gameState = {}
 
                 io.to(roomCode).emit("return-to-lobby", {
                     players: room.players,
                     hostId: room.hostId,
                 }, RETURN_DELAY)
 
+                emitLiveState(io, room)
                 console.log(`🔁 Room ${roomCode} returned to lobby`)
             }, 8000)
 
@@ -146,11 +181,53 @@ function revealAndAdvance(io, roomCode, room) {
             },
         })
 
+        room.gameState.quiz = {
+            question: {
+                text: nextQ.question,
+                options: nextQ.options,
+            },
+            leaderboard: getQuizLeaderboard(room),
+        }
+        emitLiveState(io, room)
+
+
         // ⏱️ Start timer for next question
         startQuestionTimer(io, roomCode, room)
 
     }, 3000)
 }
+
+
+function isPlayer(room, socketId) {
+    return room.players.some(p => p.id === socketId)
+}
+
+function emitLiveState(io, room) {
+    io.to(room.roomCode).emit("room-live-state", {
+        roomCode: room.roomCode,
+        phase: room.phase,
+        selectedGame: room.selectedGame,
+        players: room.players.map(p => ({
+            id: p.id,
+            name: p.name,
+        })),
+        spectatorsCount: room.spectators.length,
+        gameData: room.gameState[room.selectedGame] || null
+    })
+}
+
+function getQuizLeaderboard(room) {
+    return room.players
+        .map(p => ({
+            id: p.id,
+            name: p.name,
+            score: room.scores?.[p.id] || 0
+        }))
+        .sort((a, b) => b.score - a.score)
+}
+
+
+
 
 app.prepare().then(() => {
     const server = http.createServer((req, res) => {
@@ -181,6 +258,21 @@ app.prepare().then(() => {
             })
         })
 
+        // Spectator Events
+        socket.on("join-as-spectator", ({ roomCode }) => {
+            const room = rooms.get(roomCode)
+            if (!room) return
+
+            socket.join(roomCode)
+
+            if (!room.spectators.includes(socket.id)) {
+                room.spectators.push(socket.id)
+            }
+
+            emitLiveState(io, room)
+        })
+
+
         // =========================
         // JOIN ROOM
         // =========================
@@ -189,11 +281,15 @@ app.prepare().then(() => {
 
             if (!rooms.has(roomCode)) {
                 rooms.set(roomCode, {
+                    roomCode,
                     players: [],
+                    spectators: [],
                     hostId: null,
                     phase: "lobby",
                     selectedGame: null,
+                    gameState: {}
                 })
+
             }
 
             const room = rooms.get(roomCode)
@@ -268,6 +364,7 @@ app.prepare().then(() => {
         socket.on("start-game", ({ roomCode, game }) => {
             const room = rooms.get(roomCode)
             if (!room) return
+            if (!isPlayer(room, socket.id)) return   // 👈 BLOCK SPECTATORS
             if (socket.id !== room.hostId) return
 
             room.phase = "topic_suggestion"
@@ -290,7 +387,6 @@ app.prepare().then(() => {
                 phase: room.phase,
             })
 
-
         })
 
 
@@ -298,6 +394,7 @@ app.prepare().then(() => {
             const room = rooms.get(roomCode)
             if (!room || room.phase !== "topic_suggestion") return
 
+            if (!isPlayer(room, socket.id)) return   // 👈 BLOCK SPECTATORS
             // Each player can suggest ONLY ONCE
             if (room.topicByPlayer[socket.id]) return
 
@@ -353,6 +450,7 @@ app.prepare().then(() => {
             const room = rooms.get(roomCode)
             if (!room || room.phase !== "topic_voting") return
             if (!room.topics[topic]) return
+            if (!isPlayer(room, socket.id)) return   // 👈 BLOCK SPECTATORS
 
             const topicData = room.topics[topic]
 
@@ -443,6 +541,7 @@ app.prepare().then(() => {
         socket.on("start-quiz", async ({ roomCode, questionCount }) => {
             const room = rooms.get(roomCode)
             if (!room) return
+            if (!isPlayer(room, socket.id)) return   // 👈 BLOCK SPECTATORS
             if (socket.id !== room.hostId) return
             if (room.phase !== "question_config") return
 
@@ -488,11 +587,25 @@ app.prepare().then(() => {
                     message: "Failed to generate quiz questions. Please try again.",
                 })
             }
+
+            if (room.questions?.length) {
+                room.gameState.quiz = {
+                    question: {
+                        text: room.questions[0].question,
+                        options: room.questions[0].options,
+                    },
+                    leaderboard: getQuizLeaderboard(room),
+                }
+                emitLiveState(io, room, roomCode)
+            }
+
+
         })
 
         socket.on("submit-answer", ({ roomCode, answer }) => {
             const room = rooms.get(roomCode)
             if (!room) return
+            if (!isPlayer(room, socket.id)) return   // 👈 BLOCK SPECTATORS
             if (room.phase !== "playing") return
 
             // Prevent multiple answers
@@ -534,11 +647,19 @@ app.prepare().then(() => {
         // =========================
         socket.on("disconnect", () => {
             rooms.forEach((room, roomCode) => {
+
+                // remove spectators
+                room.spectators = room.spectators.filter(id => id !== socket.id)
+
                 const index = room.players.findIndex(
                     (p) => p.id === socket.id
                 )
 
-                if (index === -1) return
+                if (index === -1) {
+                    emitLiveState(io, room)
+                    return
+                }
+
 
                 const leftPlayer = room.players[index]
                 room.players.splice(index, 1)

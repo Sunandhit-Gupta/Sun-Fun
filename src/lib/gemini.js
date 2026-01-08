@@ -1,10 +1,20 @@
 const { GoogleGenAI } = require("@google/genai")
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-})
+// Load all keys
+const GEMINI_KEYS = process.env.GEMINI_API_KEYS.split(",")
 
-console.log("Using Gemini API key:", Boolean(process.env.GEMINI_API_KEY))
+let currentKeyIndex = 0
+
+function getAIClient() {
+  return new GoogleGenAI({
+    apiKey: GEMINI_KEYS[currentKeyIndex],
+  })
+}
+
+function rotateKey() {
+  currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length
+  console.warn("🔄 Switched Gemini API key →", currentKeyIndex)
+}
 
 async function generateQuizQuestions(topic, count) {
   const prompt = `
@@ -27,20 +37,43 @@ JSON format:
 ]
 `
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-  })
+  let attempts = 0
 
-  // Gemini returns text — we must parse safely
-  const rawText = response.text.trim()
+  while (attempts < GEMINI_KEYS.length) {
+    try {
+      const ai = getAIClient()
 
-  try {
-    return JSON.parse(rawText)
-  } catch (err) {
-    console.error("❌ Gemini JSON parse failed:", rawText)
-    throw new Error("Invalid Gemini response format")
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+      })
+
+      const rawText = response.text.trim()
+      return JSON.parse(rawText)
+    } catch (err) {
+      const msg = err.message || ""
+
+      console.error("❌ Gemini error:", msg)
+
+      // 🔥 Quota / rate limit / key issues
+      if (
+        msg.includes("quota") ||
+        msg.includes("rate") ||
+        msg.includes("RESOURCE_EXHAUSTED") ||
+        msg.includes("429") ||
+        msg.includes("403")
+      ) {
+        rotateKey()
+        attempts++
+        continue
+      }
+
+      // ❌ Non-recoverable error
+      throw err
+    }
   }
+
+  throw new Error("All Gemini API keys exhausted")
 }
 
 module.exports = { generateQuizQuestions }
