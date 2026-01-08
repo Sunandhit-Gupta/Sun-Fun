@@ -28,10 +28,13 @@ function startQuestionTimer(io, roomCode, room) {
         room.timerTimeout = null
     }
 
+
     room.timer = {
         duration: DURATION,
         endsAt: Date.now() + DURATION * 1000,
     }
+
+    room.questionStartedAt = Date.now()
 
     io.to(roomCode).emit("timer-started", {
         duration: DURATION,
@@ -56,24 +59,32 @@ function revealAndAdvance(io, roomCode, room) {
     const correct = currentQ.correctAnswer
 
     // SCORE CALCULATION (with speed bonus)
-    const now = Date.now()
-    for (const playerId in room.answers) {
-        if (room.answers[playerId] === correct) {
-            room.scores[playerId] += 10
+    const BASE_SCORE = 10
+    const MAX_BONUS = 60
+    const QUESTION_TIME_MS = room.timer.duration * 1000
 
-            if (room.timer?.endsAt) {
-                const remainingMs = Math.max(0, room.timer.endsAt - now)
-                const remainingSec = Math.floor(remainingMs / 1000)
-                room.scores[playerId] += remainingSec
-            }
-        }
+    for (const playerId in room.answers) {
+        const { answer, answeredAt } = room.answers[playerId]
+
+        if (answer !== correct) continue
+
+        const timeTaken = answeredAt - room.questionStartedAt
+        const remainingTime = Math.max(0, QUESTION_TIME_MS - timeTaken)
+
+        const speedBonus = Math.floor(
+            (remainingTime / QUESTION_TIME_MS) * MAX_BONUS
+        )
+
+        room.scores[playerId] += BASE_SCORE + speedBonus
     }
+
 
     const stats = {}
     currentQ.options.forEach(opt => stats[opt] = 0)
 
     for (const pid in room.answers) {
-        stats[room.answers[pid]]++
+        stats[room.answers[pid].answer]++
+
     }
 
     io.to(roomCode).emit("reveal-answer", {
@@ -487,7 +498,11 @@ app.prepare().then(() => {
             // Prevent multiple answers
             if (room.answers[socket.id]) return
 
-            room.answers[socket.id] = answer
+            room.answers[socket.id] = {
+                answer,
+                answeredAt: Date.now(),
+            }
+
 
             // Notify players about progress
             io.to(roomCode).emit("answer-progress", {

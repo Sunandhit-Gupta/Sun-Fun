@@ -146,21 +146,18 @@ export default function QuizGamePage() {
       setAnswerStats(stats)
 
       const socketId = socketRef.current?.id
-      const myAnswer = answers?.[socketId]
+      const myAnswerObj = answers?.[socketId]
+      if (!myAnswerObj) return
 
-      console.log("Socket ID:", socketId)
-      console.log("Answers map:", answers)
-      console.log("My Answer:", myAnswer)
-      console.log("Correct:", correctAnswer)
-
-      if (!myAnswer) return
+      const myAnswer = myAnswerObj.answer
 
       if (myAnswer === correctAnswer) {
         playSound("/sounds/correct.mp3", 0.6)
-        fireConfetti() // 🎉 BOOM
+        fireConfetti()
       } else {
         playSound("/sounds/wrong.mp3", 0.6)
       }
+
     })
 
 
