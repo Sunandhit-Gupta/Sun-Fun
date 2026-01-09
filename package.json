@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node server/server.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "autoprefixer": "^10.4.23",
-    "eslint": "^9", 
+    "eslint": "^9",
     "eslint-config-next": "16.1.1"
   }
 }
