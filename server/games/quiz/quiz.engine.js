@@ -24,7 +24,7 @@ function revealAndAdvance({ io, room, roomCode, gameId }) {
 
         const taken = answeredAt - room.questionStartedAt
         const remaining = Math.max(0, TOTAL - taken)
-        room.scores[pid] += BASE + Math.floor((remaining / TOTAL) * BONUS)
+        room.scores[pid] += (BASE + Math.floor((remaining / TOTAL) * BONUS))
     }
 
     const stats = {}
@@ -37,7 +37,7 @@ function revealAndAdvance({ io, room, roomCode, gameId }) {
     io.to(roomCode).emit("reveal-answer", {
         correctAnswer: correct,
         scores: room.scores,
-        stats: stats,
+        stats,
         answers: room.answers,
     })
 

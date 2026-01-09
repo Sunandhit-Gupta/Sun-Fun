@@ -100,6 +100,7 @@ module.exports = function setupQuizHandlers(io, socket) {
 
     if (Object.keys(room.answers).length === room.players.length) {
       clearTimeout(room.timerTimeout)
+      room.timerTimeout = null
       revealAndAdvance({
         io,
         room,
